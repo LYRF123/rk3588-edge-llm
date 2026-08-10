@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rk3588-edge-llm"
+version = "0.1.0"
+description = "RK3588 端侧 LLM 部署与优化：CPU/NPU 双路径 benchmark + 算子优化"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+# 核心框架刻意只用标准库 —— 板子上装依赖是件麻烦事，
+# 而且额外的包会挤占本来就紧张的内存。
+dependencies = []
+
+[project.optional-dependencies]
+# YAML 配置。没装的话配置文件改用 .json 也能跑。
+config = ["pyyaml>=6.0"]
+dev = ["pytest>=7.0", "pyyaml>=6.0", "ruff>=0.5"]
+
+[tool.setuptools.packages.find]
+include = ["bench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "RUF001",  # 全角标点在中文注释里是正常的
+    "RUF002",
+    "RUF003",
+]

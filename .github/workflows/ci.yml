@@ -1,0 +1,71 @@
+name: CI
+
+# CI 跑的是所有**不需要 RK3588 板子**的检查：
+#   - Python 测试（指标计算、roofline、合成数据隔离）
+#   - 算子内核在 x86 上的正确性
+#   - 算子内核交叉编译到 aarch64 能过，且 SDOT 真的生成了
+#
+# 性能数字不在 CI 里测 —— 云端 runner 的性能跟 RK3588 没有任何关系，
+# 在这里跑 benchmark 只会产生误导性的数字。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install pytest pyyaml ruff
+      - name: 测试
+        run: python -m pytest tests/ -q
+      - name: Lint
+        run: ruff check bench/ scripts/ tests/
+      - name: CLI 冒烟测试
+        run: |
+          python -m bench roofline
+          python -m bench sysinfo
+          python -m bench run --mock --out /tmp/results
+          python -m bench report /tmp/results/synthetic/bench-*.json
+
+  kernel-x86:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译并验证标量路径
+        run: |
+          cd kernels
+          make
+          ./bench_gemv 1024 512 3
+
+  kernel-aarch64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 装交叉工具链和 qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-static binutils-aarch64-linux-gnu
+      - name: 交叉编译 NEON dotprod 路径
+        run: cd kernels && make aarch64
+      - name: 确认 SDOT 指令已生成
+        run: |
+          cd kernels
+          n=$(aarch64-linux-gnu-objdump -d bench_gemv_rk3588 | grep -c sdot)
+          echo "SDOT 指令条数：$n"
+          test "$n" -gt 0 || { echo "没有生成 SDOT —— dotprod 路径没编进去"; exit 1; }
+      - name: qemu 下验证数值正确性
+        # qemu 是功能模拟，只验正确性。跑出来的耗时跟真硬件无关，不要引用。
+        run: |
+          cd kernels
+          qemu-aarch64-static -L /usr/aarch64-linux-gnu ./bench_gemv_rk3588 512 512 2

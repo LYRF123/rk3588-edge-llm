@@ -1,0 +1,58 @@
+# 上板后要扫的参数，以及每一项想验证的假设。
+#
+# 这个文件目前只是**实验设计**，还没有对应的执行代码 —— 扫描逻辑等接上真实
+# backend 之后再写。先把要验证什么、预期是什么写下来，是为了避免上板后
+# 变成漫无目的地调参数：每一项都该有一个能被推翻的预期。
+
+sweeps:
+  - name: thread_affinity
+    question: "4 个 A76 大核 vs 8 核混用，哪个快？"
+    hypothesis: "4 大核更快。GEMM 同步，A55 会拖住 A76。"
+    variants:
+      - { threads: 4, cpu_list: "4-7",  label: "4 大核" }
+      - { threads: 8, cpu_list: "0-7",  label: "8 核混用" }
+      - { threads: 4, cpu_list: null,   label: "4 线程不绑核" }
+      - { threads: 2, cpu_list: "4-5",  label: "2 大核" }
+    # 如果"不绑核"和"4 大核"差不多，说明调度器已经处理好了，
+    # 那么 README 里关于绑核的说法要改。
+
+  - name: quantization
+    question: "位宽对 decode 速度的影响是否符合 roofline 预期？"
+    hypothesis: "Q4 约为 Q8 的两倍。decode 是 memory-bound，速度与位宽成反比。"
+    variants:
+      - { model: "qwen2.5-1.5b-q4",   label: "Q4_0" }
+      - { model: "qwen2.5-1.5b-w8a8", label: "Q8_0" }
+    # 实测比值明显偏离 2 的话，说明有 roofline 没建模的开销占了大头，值得查。
+
+  - name: model_size
+    question: "模型大小与 decode 速度是否成反比？"
+    hypothesis: "成反比。0.5B 约为 1.5B 的 3 倍。"
+    variants:
+      - { model: "qwen2.5-0.5b-q4", label: "0.5B" }
+      - { model: "qwen2.5-1.5b-q4", label: "1.5B" }
+      - { model: "qwen2.5-3b-q4",   label: "3B" }
+
+  - name: context_length
+    question: "长上下文下 KV cache 的带宽开销有多大？"
+    hypothesis: "短上下文可忽略；8K 以上开始明显拖慢 decode。"
+    variants:
+      - { prompt_tokens: 128 }
+      - { prompt_tokens: 512 }
+      - { prompt_tokens: 2048 }
+      - { prompt_tokens: 8192 }
+
+  - name: npu_cores
+    question: "RKLLM 用满 3 个 NPU 核 vs 1 个核，差多少？"
+    hypothesis: "prefill 上接近线性提升；decode 上几乎没差别（卡带宽）。"
+    variants:
+      - { num_npu_core: 1 }
+      - { num_npu_core: 2 }
+      - { num_npu_core: 3 }
+    # 这一项如果 decode 真的没差别，就是"decode 卡带宽不卡算力"的直接证据。
+
+  - name: thermal
+    question: "持续负载下降频有多严重？散热方案影响多大？"
+    hypothesis: "被动散热下降频比低于 0.8；加风扇后接近 1.0。"
+    variants:
+      - { scenario: "sustained-load", cooldown_s: 0,  label: "无冷却" }
+      - { scenario: "sustained-load", cooldown_s: 30, label: "每轮冷却 30s" }

@@ -1,0 +1,111 @@
+# 待测模型清单与硬件参数。
+#
+# 选型原则：RK3588 常见配置是 4GB / 8GB / 16GB LPDDR，其中系统和其他进程要占掉
+# 一部分。以 8GB 板子为例，留给 LLM 的现实预算大约 4~5GB，因此主力测试放在
+# 0.5B~4B 区间；7B 只在 16GB 板子上作为"能不能跑得动"的边界样本。
+#
+# params 填的是**总参数量**（含 embedding）。embedding 在 decode 阶段其实不参与
+# 矩阵乘，严格算 roofline 时应该扣掉，但它仍然占内存带宽（要查表），
+# 且各模型 tie_word_embeddings 情况不同，这里保守地全部计入。
+
+models:
+  qwen2.5-0.5b-q4:
+    name: Qwen2.5-0.5B-Instruct
+    params: 4.94e8
+    weight_bits: 4
+    n_layers: 24
+    n_kv_heads: 2
+    head_dim: 64
+
+  qwen2.5-1.5b-q4:
+    name: Qwen2.5-1.5B-Instruct
+    params: 1.54e9
+    weight_bits: 4
+    n_layers: 28
+    n_kv_heads: 2
+    head_dim: 128
+
+  qwen2.5-3b-q4:
+    name: Qwen2.5-3B-Instruct
+    params: 3.09e9
+    weight_bits: 4
+    n_layers: 36
+    n_kv_heads: 2
+    head_dim: 128
+
+  qwen2.5-1.5b-w8a8:
+    name: Qwen2.5-1.5B-Instruct (w8a8)
+    params: 1.54e9
+    weight_bits: 8
+    n_layers: 28
+    n_kv_heads: 2
+    head_dim: 128
+    # w8a8 的元数据开销比 Q4_0 低（per-channel scale 而非 per-32-block）
+    quant_overhead: 0.02
+
+  # 边界样本：16GB 板子才有可能跑。
+  qwen2.5-7b-q4:
+    name: Qwen2.5-7B-Instruct
+    params: 7.62e9
+    weight_bits: 4
+    n_layers: 28
+    n_kv_heads: 4
+    head_dim: 128
+
+# 硬件参数。这里的默认值是**标称推算值**，不是实测。
+# 上板后跑 `bash scripts/collect_sysinfo.sh` 拿到真实频率，
+# 用 STREAM 或 mbw 实测带宽，然后把 efficiency_bandwidth 改成
+# 实测带宽 / peak_bandwidth_gbps。在那之前，roofline 只是数量级参考。
+hardware:
+  cpu:
+    name: RK3588 CPU (A76 x4 @2.4GHz, int8 dotprod)
+    peak_gops: 614.4          # 64 ops/cycle/core * 2.4GHz * 4 core
+    peak_bandwidth_gbps: 34.1 # LPDDR4x-4266, 64-bit
+    efficiency_compute: 0.6
+    efficiency_bandwidth: 0.5
+    note: "TODO 上板实测覆盖。A76 有 dotprod 无 i8mm/SVE。"
+
+  npu:
+    name: RK3588 NPU (RKNPU2, 3 core, int8)
+    peak_gops: 6000.0
+    peak_bandwidth_gbps: 34.1 # 与 CPU 共享 DRAM，不是额外带宽
+    efficiency_compute: 0.5
+    efficiency_bandwidth: 0.5
+    note: "TODO 上板实测覆盖。6 TOPS 是 int8 稠密峰值，w4a16 的实际利用率未知。"
+
+# 测量场景。三个场景分别打在不同的瓶颈上：
+scenarios:
+  # 短 prompt + 长输出：纯 decode 场景，直接暴露内存带宽瓶颈。
+  - name: short-prompt-long-gen
+    prompt: "用一句话解释什么是模型量化。"
+    max_tokens: 256
+    repeats: 3
+    warmup: 1
+    cooldown_s: 0
+
+  # 长 prompt + 短输出：RAG / 文档问答的形状，TTFT 是主要矛盾。
+  - name: long-prompt-short-gen
+    prompt: |
+      下面是一段设备日志，请指出其中的异常并给出一句话结论。
+      [00:00:01] npu: driver loaded, version 0.9.8
+      [00:00:03] npu: core0 online, freq 1000MHz
+      [00:00:03] npu: core1 online, freq 1000MHz
+      [00:00:03] npu: core2 online, freq 1000MHz
+      [00:01:12] thermal: soc-thermal 78.2C
+      [00:01:40] thermal: soc-thermal 84.5C, throttling to 1608MHz
+      [00:02:05] npu: core2 timeout, resetting
+      [00:02:06] npu: core2 online, freq 800MHz
+      [00:03:31] thermal: soc-thermal 86.1C, throttling to 1416MHz
+    max_tokens: 64
+    repeats: 3
+    warmup: 1
+    cooldown_s: 0
+
+  # 持续负载：连续跑，不给降温机会，看降频比掉到多少。
+  # 这是端侧最容易被 benchmark 掩盖、又最影响真实体验的一项。
+  - name: sustained-load
+    prompt: "详细说明边缘设备上部署大语言模型面临的主要挑战。"
+    max_tokens: 512
+    repeats: 5
+    warmup: 0
+    cooldown_s: 0

@@ -1,0 +1,30 @@
+# 构建产物
+kernels/bench_gemv
+kernels/bench_gemv_rk3588
+*.o
+*.so
+*.a
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 模型文件 —— 绝对不要提交，动辄几百 MB 到几 GB
+*.gguf
+*.rkllm
+*.safetensors
+*.bin
+models/
+
+# 测量结果里的大文件；结果 JSON 本身是要提交的
+results/**/*.log
+results/**/raw/
+
+# 环境
+.env
+.DS_Store
