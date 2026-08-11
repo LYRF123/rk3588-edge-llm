@@ -9,6 +9,44 @@
 # 且各模型 tie_word_embeddings 情况不同，这里保守地全部计入。
 
 models:
+  # ---- Qwen3：已在 x86 上完成 GGUF 转换与量化，见 results/x86-baseline/ ----
+  # 架构参数取自各模型 config.json，params 取自**实际 GGUF 里的张量元素总和**
+  # （用 gguf-py GGUFReader 逐张量数出来的，不是按公式推的）。
+  # 三者都是 n_kv_heads=8、head_dim=128，所以 KV cache 每 token 字节数只随层数变。
+  #
+  # 注意一个反直觉的事实：三个模型的 config.json 都写着 tie_word_embeddings: true，
+  # 但转出来的 GGUF 里 **0.6B 和 1.7B 带有独立的 output.weight，4B 没有**：
+  #   Qwen3-0.6B  311 张量  token_embd 155.6M + output.weight 155.6M  合计 0.752B
+  #   Qwen3-1.7B  311 张量  token_embd 311.2M + output.weight 311.2M  合计 2.032B
+  #   Qwen3-4B    398 张量  token_embd 389.0M + output.weight 无(tied) 合计 4.022B
+  # 也就是说小模型的 embedding 在 GGUF 里存了两份。这不是统计口径问题，是文件里
+  # 真的有两份权重，要占两份 DRAM——对 4GB 板子来说 0.6B 白白多吃 100+ MB。
+  # 上板时如果内存紧张，这是第一个该查的地方。
+  qwen3-0.6b-q4:
+    name: Qwen3-0.6B
+    params: 7.52e8            # 含重复的 output.weight
+    weight_bits: 4
+    n_layers: 28
+    n_kv_heads: 8
+    head_dim: 128
+
+  qwen3-1.7b-q4:
+    name: Qwen3-1.7B
+    params: 2.03e9            # 含重复的 output.weight
+    weight_bits: 4
+    n_layers: 28
+    n_kv_heads: 8
+    head_dim: 128
+
+  qwen3-4b-q4:
+    name: Qwen3-4B
+    params: 4.02e9            # output.weight 与 token_embd 共享
+    weight_bits: 4
+    n_layers: 36
+    n_kv_heads: 8
+    head_dim: 128
+
+  # ---- Qwen2.5：早期选型时算的，保留作对照 ----
   qwen2.5-0.5b-q4:
     name: Qwen2.5-0.5B-Instruct
     params: 4.94e8

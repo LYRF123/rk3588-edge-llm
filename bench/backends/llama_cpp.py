@@ -120,6 +120,12 @@ class LlamaCppBackend(Backend):
             "--temp", "0",          # 贪心解码，保证不同 backend 之间可比
             "-s", "0",
         ]
+        # 注意：**不要**加 `-st/--single-turn`。它的语义是"对话模式只跑一轮"，
+        # 会把 `-no-cnv` 重新翻回对话模式，于是套上 chat template；
+        # 对 Qwen3 这类默认开思考模式的模型，套上模板后会先吐一大段
+        # `[Start thinking]...`，TTFT 变成"第一个思考 token 的时间"、
+        # decode tok/s 里混进思考 token，整组指标失去意义。
+        # 2026-08-10 在 x86 上实测踩过这个坑，见 results/x86-baseline/README.md。
         cmd += self.extra_args
         return cmd
 

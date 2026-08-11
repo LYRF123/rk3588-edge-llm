@@ -1,16 +1,28 @@
 # 测量结果
 
-**目前为空 —— 还没有上板。**
+**RK3588 真机数据仍然为空 —— 还没有上板。**
+目前只有 `x86-baseline/`：真实测量，但测的是 x86 服务器，不是端侧设备。
 
 ## 目录约定
 
 ```
 results/
-├── bench-*.json          真机测量结果
-├── sysinfo-*.txt         对应板子的环境信息
+├── bench-*.json          RK3588 真机测量结果      ← 还没有
+├── sysinfo-*.txt         对应板子的环境信息        ← 还没有
+├── x86-baseline/         x86 服务器实测（真数据，非目标硬件）
+│   ├── bench-*.md
+│   └── sysinfo-x86.txt
 └── synthetic/            合成数据（mock backend），不是真机结果
     └── bench-*.json
 ```
+
+三类数据的区别必须一眼看得出来，因为它们的可信度完全不同：
+
+| 目录 | 数据来源 | 能用来干什么 | 不能用来干什么 |
+| --- | --- | --- | --- |
+| 根目录 | RK3588 实测 | 一切 | — |
+| `x86-baseline/` | x86 实测 | 验证工具链、验证量化产物没坏、看格式间的相对趋势 | **不能外推成 RK3588 的 tok/s** |
+| `synthetic/` | mock backend 生成 | 验证框架代码路径 | 任何性能结论 |
 
 `synthetic/` 的隔离是强制的：`bench.runner.run_suite` 在检测到合成 backend
 却被要求写进非 `synthetic/` 目录时会直接抛 `ValueError`，
